@@ -1,9 +1,8 @@
 const fs = require('fs');
 const path = require('path');
-const sqlite3 = require('sqlite3').verbose();
 const { Pool } = require('pg');
 
-const dbType = process.env.DB_TYPE || 'sqlite';
+const dbType = process.env.DB_TYPE || (process.env.DATABASE_URL ? 'postgres' : 'sqlite');
 let pool = null;
 let sqliteDb = null;
 
@@ -27,8 +26,13 @@ if (process.env.DATABASE_URL) {
   });
   console.log('[Database] Configured PostgreSQL Connection Pool via PGHOST.');
 } else {
-  sqliteDb = new sqlite3.Database(dbPath);
-  console.log(`[Database] Initialized SQLite Database at ${dbPath}`);
+  try {
+    const sqlite3 = require('sqlite3').verbose();
+    sqliteDb = new sqlite3.Database(dbPath);
+    console.log(`[Database] Initialized SQLite Database at ${dbPath}`);
+  } catch (err) {
+    console.error('[Database] Warning: SQLite could not be initialized:', err.message);
+  }
 }
 
 /**
