@@ -122,6 +122,23 @@ router.post('/', authenticateToken, async (req, res) => {
     const orderNumber = `CX-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
     const orderId = 'ord_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
 
+    // Sanitize pickup_slot_id to ensure foreign key validity
+    let validPickupSlotId = null;
+    if (pickup_slot_id && typeof pickup_slot_id === 'string' && pickup_slot_id.trim() !== '') {
+      const slotCheck = await db.query(
+        'SELECT id FROM pickup_slots WHERE id = $1',
+        [pickup_slot_id.trim()]
+      );
+      if (slotCheck.length > 0) {
+        validPickupSlotId = slotCheck[0].id;
+      }
+    }
+
+    // Sanitize scheduled_time
+    const sanitizedScheduledTime = (scheduled_time && typeof scheduled_time === 'string' && scheduled_time.trim() !== '')
+      ? scheduled_time.trim()
+      : null;
+
     // Insert order
     await db.query(
       `INSERT INTO orders (id, order_number, user_id, canteen_id, order_type, order_status, payment_status, total_amount, discount_amount, final_amount, token_number, pickup_slot_id, scheduled_time, delivery_building, delivery_floor, delivery_room, est_prep_mins)
@@ -129,23 +146,23 @@ router.post('/', authenticateToken, async (req, res) => {
       [
         orderId, orderNumber, req.user.id, canteen_id, order_type,
         totalAmount, discountAmount, finalAmount, tokenNumber,
-        pickup_slot_id || null, scheduled_time || null,
+        validPickupSlotId, sanitizedScheduledTime,
         delivery_building || null, delivery_floor || null, delivery_room || null, 12
       ]
     );
 
     // Insert order items & update stock
     for (const vItem of validatedItems) {
-      const itemLineId = 'oi_' + Math.random().toString(36).substr(2, 9);
+      const itemLineId = 'oi_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7);
       await db.query(
         `INSERT INTO order_items (id, order_id, menu_item_id, item_name, quantity, unit_price, total_price)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [itemLineId, orderId, vItem.menu_item_id, vItem.name, vItem.quantity, vItem.unit_price, vItem.total_price]
       );
 
-      // Decrement stock
+      // Decrement stock (CASE WHEN is standard SQL supported by both PostgreSQL and SQLite)
       await db.query(
-        `UPDATE menu_items SET available_quantity = MAX(0, available_quantity - $1) WHERE id = $2`,
+        `UPDATE menu_items SET available_quantity = CASE WHEN available_quantity > $1 THEN available_quantity - $1 ELSE 0 END WHERE id = $2`,
         [vItem.quantity, vItem.menu_item_id]
       );
     }
@@ -153,11 +170,11 @@ router.post('/', authenticateToken, async (req, res) => {
     // Insert order status history
     await db.query(
       `INSERT INTO order_status_history (id, order_id, status, remarks) VALUES ($1, $2, 'PLACED', 'Order placed successfully.')`,
-      ['osh_' + Date.now(), orderId]
+      ['osh_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5), orderId]
     );
 
     // Insert QR token record
-    const qrId = 'qr_' + Date.now();
+    const qrId = 'qr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
     const qrCodeStr = `CX-QR-${orderNumber}`;
     const qrPayload = JSON.stringify({ orderId, orderNumber, token: tokenNumber, userId: req.user.id });
     await db.query(
@@ -197,7 +214,7 @@ router.post('/', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('[Create Order Error]:', error);
-    res.status(500).json({ error: 'Error placing order.' });
+    res.status(500).json({ error: error.message || 'Error placing order.' });
   }
 });
 
