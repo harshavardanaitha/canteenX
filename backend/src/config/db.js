@@ -9,15 +9,23 @@ let sqliteDb = null;
 
 const dbPath = path.join(__dirname, '../../canteenx.db');
 
-if (dbType === 'postgres' && process.env.PGHOST) {
+if (process.env.DATABASE_URL) {
+  const isLocal = process.env.DATABASE_URL.includes('localhost') || process.env.DATABASE_URL.includes('127.0.0.1');
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: isLocal ? false : { rejectUnauthorized: false },
+  });
+  console.log('[Database] Configured PostgreSQL Connection Pool via DATABASE_URL.');
+} else if (dbType === 'postgres' && process.env.PGHOST) {
   pool = new Pool({
     host: process.env.PGHOST || 'localhost',
     port: process.env.PGPORT || 5432,
     user: process.env.PGUSER || 'canteenx',
     password: process.env.PGPASSWORD || 'canteenx_secure_pass',
     database: process.env.PGDATABASE || 'canteenx_db',
+    ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false,
   });
-  console.log('[Database] Configured PostgreSQL Connection Pool.');
+  console.log('[Database] Configured PostgreSQL Connection Pool via PGHOST.');
 } else {
   sqliteDb = new sqlite3.Database(dbPath);
   console.log(`[Database] Initialized SQLite Database at ${dbPath}`);
